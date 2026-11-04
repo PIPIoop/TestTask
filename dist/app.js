@@ -27,6 +27,30 @@ const objects = [
 ];
 const initial = {size:'square',detail:'large',palette:'lilac',customPalettes:[],duplicates:[],sceneScale:{},scaleLocks:{},rotationLocks:{},mode:'manual',selected:['book','phone','puzzle'],layerOrder:['book','phone','puzzle'],seed:0,variantBase:0,layoutVersion:2,candidates:[],edits:{},activeObject:null,brief:''};
 let state = {...initial};
+const undoStack=[],redoStack=[],historyLimit=60;
+const historySnapshot=()=>JSON.stringify(state);
+function updateHistoryButtons(){
+  $('#undoBtn').disabled=!undoStack.length;
+  $('#redoBtn').disabled=!redoStack.length;
+}
+function commitHistory(before){
+  if(!before||before===historySnapshot())return;
+  undoStack.push(before);
+  if(undoStack.length>historyLimit)undoStack.shift();
+  redoStack.length=0;
+  updateHistoryButtons();
+}
+function withHistory(action){const before=historySnapshot();action();commitHistory(before)}
+function travelHistory(from,to){
+  if(!from.length)return;
+  const previous=from.pop();
+  to.push(historySnapshot());
+  state=JSON.parse(previous);
+  pointerAction=null;
+  if(typeof scaleBefore!=='undefined')scaleBefore=null;
+  update();
+  updateHistoryButtons();
+}
 const refinedLayoutCache=new Map(),maskAreaCache=new Map();
 const $ = s => document.querySelector(s);
 const templateId=id=>String(id).replace(/~\d+$/,'');
@@ -732,45 +756,50 @@ function restoreProject(data){
     }
   }
   state={...initial,...data,customPalettes,duplicates,sceneScale,scaleLocks,rotationLocks,detail:['large','small'].includes(data.detail)?data.detail:'large',selected:[...new Set(data.selected.filter(id=>objects.some(o=>o.id===id)))],variantBase:Number.isInteger(data.variantBase)?Math.max(0,data.variantBase):0,seed:Number.isInteger(data.seed)?Math.max(0,data.seed):0,layoutVersion:data.layoutVersion===2?2:1,edits,activeObject:null,candidates:[]};
-  generateCandidates(false,true);update();
+  generateCandidates(false,true);undoStack.length=0;redoStack.length=0;update();updateHistoryButtons();
 }
 function removeSceneObject(id){
+  const historyBefore=historySnapshot();
   const before=sceneFor(state.seed),positions=new Map(before.items.map(item=>{const edit=getEdit(item.o.id);return [item.o.id,{x:item.cx+edit.dx,y:item.cy+edit.dy,angle:edit.angle}]}));
   state.selected=state.selected.filter(other=>other!==id);
   state.duplicates=state.duplicates.filter(other=>other!==id);
   if(state.activeObject===id)state.activeObject=null;
   generateCandidates(false,true);
   for(const item of sceneFor(state.seed).items){const target=positions.get(item.o.id);if(!target)continue;const edit=getEdit(item.o.id);setEdit(item.o.id,{...edit,dx:target.x-item.cx,dy:target.y-item.cy,angle:target.angle})}
-  update();
+  update();commitHistory(historyBefore);
 }
 document.addEventListener('click',e=>{
-  const size=e.target.closest('[data-size]');if(size){state.size=size.dataset.size;state.activeObject=null;generateCandidates(false);update();return}
-  const detail=e.target.closest('[data-detail]');if(detail){state.detail=detail.dataset.detail;state.activeObject=null;generateCandidates(false);update();return}
-  const palette=e.target.closest('[data-palette]');if(palette){state.palette=palette.dataset.palette;update();return}
+  const size=e.target.closest('[data-size]');if(size){withHistory(()=>{state.size=size.dataset.size;state.activeObject=null;generateCandidates(false);update()});return}
+  const detail=e.target.closest('[data-detail]');if(detail){withHistory(()=>{state.detail=detail.dataset.detail;state.activeObject=null;generateCandidates(false);update()});return}
+  const palette=e.target.closest('[data-palette]');if(palette){withHistory(()=>{state.palette=palette.dataset.palette;update()});return}
   const mode=e.target.closest('[data-mode]');if(mode){state.mode=mode.dataset.mode;update();return}
-  const variant=e.target.closest('[data-variant]');if(variant){state.seed=Number(variant.dataset.variant);state.activeObject=null;renderPreview();renderCandidates();return}
+  const variant=e.target.closest('[data-variant]');if(variant){withHistory(()=>{state.seed=Number(variant.dataset.variant);state.activeObject=null;renderPreview();renderCandidates()});return}
   const layer=e.target.closest('[data-layer-id]');if(layer){state.activeObject=layer.dataset.layerId;update();return}
-  const object=e.target.closest('[data-object]');if(object){const id=object.dataset.object;if(state.selected.includes(id))removeSceneObject(id);else{state.selected.push(id);generateCandidates(false);update()}return}
+  const object=e.target.closest('[data-object]');if(object){const id=object.dataset.object;if(state.selected.includes(id))removeSceneObject(id);else withHistory(()=>{state.selected.push(id);generateCandidates(false);update()});return}
   const remove=e.target.closest('[data-remove]');if(remove){removeSceneObject(remove.dataset.remove);return}
 });
 $('#briefInput').addEventListener('input',e=>{state.brief=e.target.value;$('#briefFeedback').hidden=true});
-$('#generateBtn').addEventListener('click',()=>{if(state.mode==='brief'&&!selectByBrief())return;state.layoutVersion=2;generateCandidates(true);update()});
-$('#regenerateBtn').addEventListener('click',()=>{state.layoutVersion=2;generateCandidates(true);update()});
-$('#shuffleBtn').addEventListener('click',()=>{const i=state.candidates.indexOf(state.seed);state.seed=state.candidates[(i+1)%state.candidates.length];state.activeObject=null;renderPreview();renderCandidates()});
-$('#clearBtn').addEventListener('click',()=>{state.selected=[];state.duplicates=[];state.activeObject=null;state.scaleLocks={};state.rotationLocks={};generateCandidates(false);update()});
+$('#generateBtn').addEventListener('click',()=>{const before=historySnapshot();if(state.mode==='brief'&&!selectByBrief())return;state.layoutVersion=2;generateCandidates(true);update();commitHistory(before)});
+$('#regenerateBtn').addEventListener('click',()=>withHistory(()=>{state.layoutVersion=2;generateCandidates(true);update()}));
+$('#shuffleBtn').addEventListener('click',()=>withHistory(()=>{const i=state.candidates.indexOf(state.seed);state.seed=state.candidates[(i+1)%state.candidates.length];state.activeObject=null;renderPreview();renderCandidates()}));
+$('#clearBtn').addEventListener('click',()=>withHistory(()=>{state.selected=[];state.duplicates=[];state.activeObject=null;state.scaleLocks={};state.rotationLocks={};generateCandidates(false);update()}));
 $('#exportBtn').addEventListener('click',()=>download(`composition-${state.size}-${state.palette}-v${state.candidates.indexOf(state.seed)+1}.svg`,'image/svg+xml;charset=utf-8',renderSvg()));
 $('#saveBtn').addEventListener('click',()=>{localStorage.setItem('composition-project',JSON.stringify(state));download('composition-project.json','application/json;charset=utf-8',JSON.stringify({version:2,...state},null,2))});
 $('#importPaletteBtn').addEventListener('click',()=>$('#paletteInput').click());
-$('#paletteInput').addEventListener('change',async e=>{const file=e.target.files?.[0];if(!file)return;try{const parsed=parsePalette(JSON.parse(await file.text()));installPalettes([parsed]);state.customPalettes=state.customPalettes.filter(p=>p.id!==parsed.id).concat(parsed);state.palette=parsed.id;$('#paletteFeedback').hidden=true;update()}catch(err){$('#paletteFeedback').textContent=err.message;$('#paletteFeedback').hidden=false}e.target.value=''});
+$('#paletteInput').addEventListener('change',async e=>{const file=e.target.files?.[0];if(!file)return;try{const parsed=parsePalette(JSON.parse(await file.text()));installPalettes([parsed]);state.customPalettes=state.customPalettes.filter(p=>p.id!==parsed.id).concat(parsed);state.palette=parsed.id;undoStack.length=0;redoStack.length=0;$('#paletteFeedback').hidden=true;update();updateHistoryButtons()}catch(err){$('#paletteFeedback').textContent=err.message;$('#paletteFeedback').hidden=false}e.target.value=''});
 $('#loadBtn').addEventListener('click',()=>$('#loadInput').click());
 $('#loadInput').addEventListener('change',async e=>{const file=e.target.files?.[0];if(!file)return;try{restoreProject(JSON.parse(await file.text()))}catch(err){alert('Не удалось загрузить проект: '+err.message)}e.target.value=''});
-$('#scaleSlider').addEventListener('input',e=>{if(!state.activeObject||scaleLocked())return;state.sceneScale[editKey()]=Number(e.target.value)/100;renderPreview()});
-$('#scaleSlider').addEventListener('change',()=>renderCandidates());
-$('#rotationInput').addEventListener('change',e=>{if(!state.activeObject||rotationLocked(state.activeObject))return;const edit=getEdit(state.activeObject);setEdit(state.activeObject,{...edit,angle:Math.max(-180,Math.min(180,Number(e.target.value)||0))});renderPreview();renderCandidates()});
-$('#lockScaleBtn').addEventListener('click',()=>{if(!state.activeObject)return;const key=editKey();if(scaleLocked())delete state.scaleLocks[key];else state.scaleLocks[key]=true;renderPreview()});
-$('#lockRotationBtn').addEventListener('click',()=>{if(!state.activeObject)return;const key=rotationLockKey(state.activeObject);if(rotationLocked(state.activeObject))delete state.rotationLocks[key];else state.rotationLocks[key]=true;renderPreview()});
+let scaleBefore=null;
+$('#scaleSlider').addEventListener('pointerdown',()=>{scaleBefore=historySnapshot()});
+$('#scaleSlider').addEventListener('keydown',()=>{if(scaleBefore===null)scaleBefore=historySnapshot()});
+$('#scaleSlider').addEventListener('input',e=>{if(!state.activeObject||scaleLocked())return;if(scaleBefore===null)scaleBefore=historySnapshot();state.sceneScale[editKey()]=Number(e.target.value)/100;renderPreview()});
+$('#scaleSlider').addEventListener('change',()=>{commitHistory(scaleBefore);scaleBefore=null;renderCandidates()});
+$('#rotationInput').addEventListener('change',e=>{if(!state.activeObject||rotationLocked(state.activeObject))return;withHistory(()=>{const edit=getEdit(state.activeObject);setEdit(state.activeObject,{...edit,angle:Math.max(-180,Math.min(180,Number(e.target.value)||0))});renderPreview();renderCandidates()})});
+$('#lockScaleBtn').addEventListener('click',()=>{if(!state.activeObject)return;withHistory(()=>{const key=editKey();if(scaleLocked())delete state.scaleLocks[key];else state.scaleLocks[key]=true;renderPreview()})});
+$('#lockRotationBtn').addEventListener('click',()=>{if(!state.activeObject)return;withHistory(()=>{const key=rotationLockKey(state.activeObject);if(rotationLocked(state.activeObject))delete state.rotationLocks[key];else state.rotationLocks[key]=true;renderPreview()})});
 $('#duplicateBtn').addEventListener('click',()=>{
   const source=state.activeObject;if(!source)return;
+  const historyBefore=historySnapshot();
   const before=sceneFor(state.seed),where=new Map(before.items.map(item=>{const edit=getEdit(item.o.id);return [item.o.id,{x:item.cx+edit.dx,y:item.cy+edit.dy,angle:edit.angle}]}));
   const base=templateId(source);let number=2;while(sceneIds().includes(`${base}~${number}`))number++;
   const copy=`${base}~${number}`;state.duplicates.push(copy);
@@ -778,14 +807,13 @@ $('#duplicateBtn').addEventListener('click',()=>{
   generateCandidates(false,true);
   const next=sceneFor(state.seed);where.set(copy,{x:where.get(source).x+Math.min(next.w,next.h)*.045,y:where.get(source).y+Math.min(next.w,next.h)*.035,angle:where.get(source).angle});
   for(const item of next.items){const target=where.get(item.o.id);if(!target)continue;const edit=getEdit(item.o.id);setEdit(item.o.id,{...edit,dx:target.x-item.cx,dy:target.y-item.cy,angle:target.angle})}
-  state.activeObject=copy;update();
+  state.activeObject=copy;update();commitHistory(historyBefore);
 });
-$('#resetObjectBtn').addEventListener('click',()=>{if(!state.activeObject)return;delete state.edits[editKey()]?.[state.activeObject];renderPreview();renderCandidates()});
+$('#resetObjectBtn').addEventListener('click',()=>{if(!state.activeObject)return;withHistory(()=>{delete state.edits[editKey()]?.[state.activeObject];renderPreview();renderCandidates()})});
 function moveLayer(direction){
   const index=state.layerOrder.indexOf(state.activeObject),next=index+direction;
   if(index<0||next<0||next>=state.layerOrder.length)return;
-  [state.layerOrder[index],state.layerOrder[next]]=[state.layerOrder[next],state.layerOrder[index]];
-  update();
+  withHistory(()=>{[state.layerOrder[index],state.layerOrder[next]]=[state.layerOrder[next],state.layerOrder[index]];update()});
 }
 $('#layerDownBtn').addEventListener('click',()=>moveLayer(-1));
 $('#layerUpBtn').addEventListener('click',()=>moveLayer(1));
@@ -811,6 +839,7 @@ layerList.addEventListener('dragover',e=>{
 layerList.addEventListener('drop',e=>{
   if(!draggedLayer)return;
   e.preventDefault();
+  const historyBefore=historySnapshot();
   const target=e.target.closest('[data-layer-chip]');
   const from=state.layerOrder.indexOf(draggedLayer);
   const to=target?state.layerOrder.indexOf(target.dataset.layerChip):state.layerOrder.length;
@@ -821,7 +850,7 @@ layerList.addEventListener('drop',e=>{
     state.layerOrder.splice(insertAt,0,draggedLayer);
     state.activeObject=draggedLayer;
   }
-  draggedLayer=null;update();
+  draggedLayer=null;update();commitHistory(historyBefore);
 });
 layerList.addEventListener('dragend',()=>{draggedLayer=null;layerList.querySelectorAll('.dragging,.drop-before,.drop-after').forEach(chip=>chip.classList.remove('dragging','drop-before','drop-after'))});
 function svgPoint(svg,event){const point=svg.createSVGPoint();point.x=event.clientX;point.y=event.clientY;return point.matrixTransform(svg.getScreenCTM().inverse())}
@@ -831,9 +860,10 @@ $('#preview').addEventListener('pointerdown',e=>{
   if(!id){if(state.activeObject){state.activeObject=null;renderPreview()}return}
   if((scaleHandle&&scaleLocked())||(rotateHandle&&rotationLocked(id)))return;
   state.activeObject=id;renderPreview();
+  const historyBefore=historySnapshot();
   const svg=$('#preview svg'),start=svgPoint(svg,e),edit=getEdit(id),item=sceneFor(state.seed).items.find(x=>x.o.id===id);
   const center={x:item.cx+edit.dx,y:item.cy+edit.dy};
-  pointerAction={pointerId:e.pointerId,id,mode:rotateHandle?'rotate':scaleHandle?'scale':'move',start,edit,center,startAngle:Math.atan2(start.y-center.y,start.x-center.x)*180/Math.PI};
+  pointerAction={pointerId:e.pointerId,id,mode:rotateHandle?'rotate':scaleHandle?'scale':'move',start,edit,center,startAngle:Math.atan2(start.y-center.y,start.x-center.x)*180/Math.PI,historyBefore};
   try{svg.setPointerCapture(e.pointerId)}catch{}
   e.preventDefault();
 });
@@ -845,7 +875,18 @@ document.addEventListener('pointermove',e=>{
   else if(a.mode==='rotate'&&!rotationLocked(a.id))setEdit(a.id,{...a.edit,angle:angleFromPointer(a.edit.angle,a.startAngle,a.center,point)});
   if(a.mode==='scale')renderPreview();else updateLiveObject(a.id);e.preventDefault();
 });
-function finishPointer(e){if(!pointerAction||e.pointerId!==pointerAction.pointerId)return;pointerAction=null;renderCandidates()}
+function finishPointer(e){if(!pointerAction||e.pointerId!==pointerAction.pointerId)return;commitHistory(pointerAction.historyBefore);pointerAction=null;renderCandidates()}
 document.addEventListener('pointerup',finishPointer);document.addEventListener('pointercancel',finishPointer);
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&state.activeObject){state.activeObject=null;renderPreview()}});
+$('#undoBtn').addEventListener('click',()=>travelHistory(undoStack,redoStack));
+$('#redoBtn').addEventListener('click',()=>travelHistory(redoStack,undoStack));
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'&&state.activeObject){state.activeObject=null;renderPreview();return}
+  if(!(e.ctrlKey||e.metaKey)||e.altKey||e.target.closest?.('textarea,[contenteditable="true"],input:not([type="range"])'))return;
+  const key=e.key.toLowerCase();
+  if(key==='z'||key==='y'){
+    e.preventDefault();
+    if(key==='y'||e.shiftKey)travelHistory(redoStack,undoStack);
+    else travelHistory(undoStack,redoStack);
+  }
+});
 try{const saved=JSON.parse(localStorage.getItem('composition-project'));if(saved)restoreProject(saved);else{generateCandidates();update()}}catch{state={...initial};generateCandidates();update()}

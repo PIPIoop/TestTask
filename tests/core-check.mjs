@@ -41,6 +41,22 @@ const positionBefore=evaluate("(()=>{const item=sceneFor(state.seed).items.find(
 evaluate("removeSceneObject('phone~2')");
 const positionAfter=evaluate("(()=>{const item=sceneFor(state.seed).items.find(x=>x.o.id==='phone');const edit=getEdit('phone');return [item.cx+edit.dx,item.cy+edit.dy]})()");
 if(evaluate('state.duplicates.length')!==0||Math.hypot(positionBefore[0]-positionAfter[0],positionBefore[1]-positionAfter[1])>0.01)throw Error('Removing a copy moved another object');
+const historyResult=evaluate(`(()=>{
+  undoStack.length=0;redoStack.length=0;
+  const before=historySnapshot(),start=getEdit('phone').dx;
+  setEdit('phone',{...getEdit('phone'),dx:start+20});
+  setEdit('phone',{...getEdit('phone'),dx:start+40});
+  commitHistory(before);
+  const grouped=undoStack.length===1;
+  travelHistory(undoStack,redoStack);
+  const undone=getEdit('phone').dx===start&&redoStack.length===1;
+  travelHistory(redoStack,undoStack);
+  const redone=getEdit('phone').dx===start+40;
+  travelHistory(undoStack,redoStack);
+  withHistory(()=>setEdit('phone',{...getEdit('phone'),dx:start+10}));
+  return {grouped,undone,redone,redoCleared:redoStack.length===0};
+})()`);
+if(Object.values(historyResult).some(value=>!value))throw Error(`Undo/redo failed: ${JSON.stringify(historyResult)}`);
 const metaphor=evaluate("state.brief='Мост между людьми';selectByBrief()?[...state.selected]:null");
 if(!metaphor?.includes('puzzle')||!metaphor.includes('phone'))throw Error('Metaphor matching failed');
 const backgroundPhrase=evaluate("state.brief='Фоновые цветы и книга';selectByBrief()?[...state.selected]:null");

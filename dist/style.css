@@ -76,6 +76,7 @@
   .variant-thumb{height:48px}
   .variant-caption{padding:2px 3px 0}
 }
+.history-controls{display:flex;gap:5px}.history-controls button{width:29px;height:27px;border:1px solid #e5e3ed;border-radius:7px;background:#fff;color:#6959df;font-size:19px;line-height:1}.history-controls button:hover:not(:disabled){background:#f4f1ff}.history-controls button:disabled{color:#bcb8ca;cursor:default;opacity:.6}
 .variant-heading{align-items:center}
 .variant-heading-actions{display:flex;align-items:center;gap:12px}
 .regenerate-button{border:1px solid #dedaf0;border-radius:7px;background:#f8f6ff;color:#6d5edb;padding:5px 9px;font-size:10px;font-weight:800;white-space:nowrap}
