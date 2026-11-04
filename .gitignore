@@ -1,0 +1,9 @@
+tests/*.png
+tests/smoke-output.svg
+tests/smoke-project.json
+tests/edited-output.svg
+tests/requirements-output.svg
+tests/requirements-project.json
+source-art/*.png
+node_modules/
+*.zip
