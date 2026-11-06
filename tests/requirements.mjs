@@ -59,7 +59,7 @@ const exported=await page.evaluate(source=>{
   const broken=[...source.matchAll(/url\(#([^)]*)\)/g)].map(match=>match[1]).filter(id=>!ids.has(id));
   return {error:doc.querySelector('parsererror')?.textContent,ids:[...doc.querySelectorAll('#objects > g')].map(el=>el.getAttribute('data-object-id')),angle:doc.querySelector('[data-object-id="phone~2"]')?.getAttribute('transform'),backgroundChildren:doc.querySelector('#background')?.children.length,raster:doc.querySelectorAll('image,foreignObject').length,broken};
 },svg);
-if(exported.error||exported.ids.length!==4||!exported.ids.includes('phone~2')||!exported.angle.startsWith('rotate(45.0 ')||exported.backgroundChildren!==1||exported.raster||exported.broken.length)throw Error('Noncompliant SVG export: '+JSON.stringify(exported));
+if(exported.error||exported.ids.length!==4||!exported.ids.includes('phone~2')||!exported.angle.startsWith('rotate(45.0 ')||exported.backgroundChildren<2||exported.raster||exported.broken.length)throw Error('Noncompliant SVG export: '+JSON.stringify(exported));
 
 await page.locator('[data-remove="phone~2"]').click();
 if(await page.locator('#preview svg #objects > g').count()!==3||await page.evaluate(()=>state.duplicates.length)!==0)throw Error('Copy removal failed');

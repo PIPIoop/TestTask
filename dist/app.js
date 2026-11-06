@@ -86,7 +86,16 @@ function fragment(asset,p,prefix,variant){
   return `<defs>${namespaced(recolor(asset.defs,p,variant))}</defs>${namespaced(recolor(asset.markup,p,variant))}`;
 }
 function background(w,h,p,variant,referenceKey=null){
-  return `<rect width="${w}" height="${h}" fill="${p.bg}"/>`;
+  const art=backgroundArt[p.id]||backgroundArt.lilac;
+  const scale=Math.min(w,h)/1000;
+  const xRight=w-1000*scale,yBottom=h-1000*scale;
+  const offset={topLeft:[0,0],topRight:[xRight,0],bottomLeft:[0,yBottom],bottomRight:[xRight,yBottom]};
+  const decorations=Object.entries(art).filter(([name])=>name!=='origin').map(([name,markup])=>{
+    const [x,y]=offset[name];
+    const shapes=p.id in backgroundArt?markup:recolor(markup,p);
+    return `<g transform="translate(${x} ${y}) scale(${scale}) translate(${-art.origin[0]} ${-art.origin[1]})">${shapes}</g>`;
+  }).join('');
+  return `<rect width="${w}" height="${h}" fill="${p.bg}"/>${decorations}`;
 }
 const priority={book:10,notebook:9,headphones:8,lamp:7,phone:6,flowers:5,planner:5,puzzle:4,pen:3,coin:2};
 const objectPriority=id=>priority[templateId(id).replace(/Bg$/,'')]||0;

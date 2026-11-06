@@ -7,13 +7,13 @@ const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const load=file=>fs.readFileSync(path.join(root,'dist',file),'utf8');
 const app=load('app.js').split("document.addEventListener('click',e=>{")[0];
 const context=vm.createContext({console});
-vm.runInContext([load('figma-assets.js'),load('shape-masks.js'),app].join('\n'),context,{timeout:30000});
+vm.runInContext([load('figma-assets.js'),load('background-art.js'),load('shape-masks.js'),app].join('\n'),context,{timeout:30000});
 const evaluate=code=>vm.runInContext(code,context,{timeout:30000});
 const checkSvg=(svg,count)=>{
   const ids=[...svg.matchAll(/data-object-id="([^"]+)"/g)].map(match=>match[1]);
   const defined=new Set([...svg.matchAll(/\bid="([^"]+)"/g)].map(match=>match[1]));
   const broken=[...svg.matchAll(/url\(#([^)]*)\)/g)].map(match=>match[1]).filter(id=>!defined.has(id));
-  if(ids.length!==count||broken.length||/<image\b|<foreignObject\b/.test(svg)||!/<g id="background"><rect[^>]+\/><\/g>/.test(svg))throw Error(`Invalid SVG: ${JSON.stringify({ids,broken})}`);
+  if(ids.length!==count||broken.length||/<image\b|<foreignObject\b/.test(svg)||!/<g id="background"><rect[^>]+\/><g transform=/.test(svg))throw Error(`Invalid SVG: ${JSON.stringify({ids,broken})}`);
 };
 
 evaluate("generateCandidates();state.activeObject='phone';state.duplicates=['phone~2'];state.layerOrder.push('phone~2');generateCandidates(false,true);setEdit('phone~2',{dx:65,dy:45,angle:45,mult:1.15})");
@@ -34,6 +34,8 @@ context.importedPalette=palette;
 evaluate('installPalettes([importedPalette]);state.customPalettes=[parsePalette(importedPalette)];state.palette=parsePalette(importedPalette).id');
 const recolored=evaluate('renderSvg()');
 if(!recolored.includes(`fill="${palette.bg.toUpperCase()}"`)||!recolored.includes(`fill="${palette.a.toUpperCase()}"`))throw Error('Imported palette did not recolor canvas and objects');
+const customBackground=recolored.split('<g id="background">')[1].split('<g id="objects"')[0];
+if(!customBackground.includes(`stroke="${palette.a.toUpperCase()}"`)||!customBackground.includes(`fill="${palette.bg2.toUpperCase()}"`))throw Error('Imported palette did not recolor background artwork');
 context.document={querySelector:()=>({hidden:true,textContent:''})};
 evaluate('update=()=>{};const savedProject=JSON.parse(JSON.stringify(state));state.palette="lilac";state.duplicates=[];restoreProject(savedProject)');
 if(evaluate("getEdit('phone~2').angle")!==45||evaluate('state.duplicates.length')!==1||evaluate('state.customPalettes.length')!==1||!evaluate('scaleLocked()')||!evaluate("rotationLocked('phone~2')"))throw Error('Project restore omitted editing or lock data');
